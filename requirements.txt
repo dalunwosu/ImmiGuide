@@ -1,0 +1,22 @@
+# AI and Agent Libraries
+google-generativeai>=0.3.0
+google-genai>=0.2.0
+
+# RAG Libraries
+langchain>=0.1.0
+langchain-community>=0.0.10
+chromadb>=0.4.22
+sentence-transformers>=2.2.2
+
+# UI Library
+streamlit>=1.29.0
+
+# Utilities
+python-dotenv>=1.0.0
+nest-asyncio>=1.5.8
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+lxml>=4.9.0
+
+# Testing
+pytest>=7.4.0
