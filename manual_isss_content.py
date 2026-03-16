@@ -1,410 +1,269 @@
 import json
 import os
+import re
+from typing import Any
+from urllib.parse import urldefrag
 
-# ─────────────────────────────────────────────
-# ISSS CONTENT (flat structure: url, title, content)
-# ─────────────────────────────────────────────
-isss_content = [
-    {
-        "url": "https://isss.gsu.edu/employment/cpt/",
-        "title": "Curricular Practical Training (CPT)",
-        "content": """
-Curricular Practical Training (CPT)
+import requests
+from bs4 import BeautifulSoup, Tag
 
-What is CPT?
-Curricular Practical Training (CPT) is a type of employment authorization that allows F-1 students to work off-campus in a position that is directly related to their major area of study.
+try:
+    from pypdf import PdfReader  # type: ignore
+except Exception:
+    PdfReader = None
 
-CPT Eligibility Requirements:
-- Must be enrolled full-time for at least one academic year (two semesters or three quarters)
-- Job must be directly related to your major
-- Must be required by your academic program or earn academic credit
-- Must have job offer before applying
-- Cannot begin work until CPT is authorized
-
-Types of CPT:
-1. Part-time CPT: 20 hours or less per week (can be used while school is in session)
-2. Full-time CPT: More than 20 hours per week (typically during breaks)
-
-Important: If you use 12 months or more of full-time CPT, you will NOT be eligible for OPT.
-
-How to Apply:
-1. Get a job offer related to your major
-2. Meet with your academic advisor
-3. Submit CPT application to ISSS
-4. Wait for ISSS authorization
-5. Receive updated I-20 with CPT authorization
-
-Processing Time: 5-7 business days
-
-Questions? Contact ISSS at isss@gsu.edu
-        """
-    },
-    {
-        "url": "https://isss.gsu.edu/employment/opt/",
-        "title": "Optional Practical Training (OPT)",
-        "content": """
-Optional Practical Training (OPT)
-
-What is OPT?
-Optional Practical Training (OPT) is temporary employment authorization that allows F-1 students to work in the United States in their field of study.
-
-Types of OPT:
-1. Pre-completion OPT: Work before completing your degree (part-time during school, full-time during breaks)
-2. Post-completion OPT: Work after completing your degree (full-time, 12 months)
-3. STEM Extension: Additional 24 months for STEM degree holders (total 36 months)
-
-Eligibility Requirements:
-- Must be enrolled full-time for at least one academic year
-- Must be in valid F-1 status
-- Must apply before completing degree or within 60 days after completion
-- Job must be directly related to major area of study
-- Must work at least 20 hours per week (or face unemployment limits)
-
-Application Timeline:
-- Apply 90 days before graduation but no later than 60 days after completion
-- USCIS processing: 3-5 months typically
-- Cannot work until you receive EAD card
-
-Application Steps:
-1. Attend OPT workshop at ISSS
-2. Request OPT recommendation from ISSS
-3. Receive I-20 with OPT recommendation
-4. File Form I-765 with USCIS
-5. Pay $410 filing fee to USCIS
-6. Wait for EAD card approval
-7. Begin working
-
-Required Documents:
-- Form I-765 (Application for Employment Authorization)
-- I-20 with OPT recommendation from ISSS
-- Copy of I-94
-- Copy of all previous EADs (if applicable)
-- Copy of passport identification page
-- Two passport photos
-- Personal check or money order for $410 payable to U.S. Department of Homeland Security
-
-Important Rules:
-- Cannot work before receiving EAD card
-- Must report all employment to ISSS
-- Can have up to 90 days of unemployment (150 days for STEM)
-- Must maintain valid F-1 status
-
-Contact: isss@gsu.edu
-        """
-    },
-    {
-        "url": "https://isss.gsu.edu/employment/",
-        "title": "F-1 Employment Options",
-        "content": """
-Employment for F-1 Students
-
-F-1 students have several employment options:
-
-On-Campus Employment:
-- No special authorization required
-- Work up to 20 hours per week during school term
-- Work full-time during official breaks
-- Must maintain full-time enrollment
-
-Off-Campus Employment:
-Requires special authorization through one of these programs:
-
-1. Curricular Practical Training (CPT)
-   - Must be related to major
-   - After one academic year
-   - Can be part-time or full-time
-
-2. Optional Practical Training (OPT)
-   - Pre-completion or post-completion
-   - 12 months standard (36 months for STEM)
-   - Requires USCIS authorization
-
-3. Severe Economic Hardship
-   - For unexpected financial difficulties
-   - Rarely granted
-   - Must prove hardship
-
-Important Rules:
-- Working without authorization violates F-1 status
-- Violations can lead to deportation
-- Always get approval BEFORE starting work
-- Keep copies of all employment authorization documents
-
-For questions, contact ISSS at isss@gsu.edu
-        """
-    },
-    {
-        "url": "https://isss.gsu.edu/travel/",
-        "title": "Travel for F-1 Students",
-        "content": """
-Travel Information for F-1 Students
-
-Documents Required for Re-entry:
-- Valid passport (valid for at least 6 months)
-- Valid F-1 visa stamp (unless from visa-exempt country)
-- Valid I-20 with travel signature (must be signed within past 12 months)
-- Proof of enrollment (unofficial transcript or enrollment letter)
-
-Travel Signature:
-Your I-20 must have a travel signature from ISSS to re-enter the U.S.
-- Travel signatures are valid for 12 months
-- Get signature before leaving U.S.
-- Can request signature via email to isss@gsu.edu
-
-Important Information:
-
-During OPT:
-- Must have valid EAD card
-- Must have job offer letter or proof of employment
-- I-20 must be endorsed for travel within past 6 months
-
-Canada and Mexico Travel:
-- F-1 visa stamp can be expired for trips under 30 days (automatic visa revalidation)
-- Must not apply for new visa while away
-- Must return to U.S. directly from Canada or Mexico
-
-Tips:
-- Check passport expiration before booking travel
-- Get travel signature at least 1 week before departure
-- Keep employment documents with you
-- Check visa requirements for destination country
-
-Questions? Email isss@gsu.edu
-        """
-    },
-    {
-        "url": "https://isss.gsu.edu/current-students/",
-        "title": "Current F-1 Students",
-        "content": """
-Information for Current F-1 Students
-
-Maintaining Your F-1 Status:
-
-Full-Time Enrollment:
-- Undergraduate: 12 credits minimum per semester
-- Graduate: 9 credits minimum per semester
-- Must register for classes every semester (except approved breaks)
-
-Reporting Requirements:
-- Report address changes within 10 days
-- Report program changes to ISSS
-- Keep passport valid (at least 6 months)
-- Maintain valid I-20
-
-Employment:
-- On-campus: Up to 20 hours/week during semester, full-time during breaks
-- Off-campus: Requires CPT or OPT authorization
-- Never work without authorization
-
-Travel:
-- Get I-20 travel signature before leaving U.S.
-- Signature valid for 12 months
-
-Important Deadlines:
-- OPT applications: 90 days before to 60 days after graduation
-- Travel signatures: At least 1 week before departure
-
-Contact: isss@gsu.edu
-        """
-    },
-    {
-        "url": "https://isss.gsu.edu/",
-        "title": "International Student and Scholar Services - GSU",
-        "content": """
-International Student and Scholar Services (ISSS)
-
-Welcome to Georgia State University!
-
-ISSS assists international students with:
-- Immigration advising
-- Visa and travel guidance
-- Employment authorization
-- Cultural adjustment
-
-Contact Information:
-Email: isss@gsu.edu
-Phone: (404) 413-2070
-Location: Student Success Center, Suite 100, 25-27 Auburn Ave NE, Atlanta, GA 30303
-
-Office Hours:
-Monday - Friday: 8:30 AM - 5:15 PM EST
-
-Services:
-- I-20 processing
-- OPT and CPT authorization
-- Travel signatures
-- Immigration workshops
-
-Important Reminders for F-1 Students:
-- Maintain full-time enrollment
-- Report address changes within 10 days
-- Get work authorization before starting employment
-
-For urgent matters, email isss@gsu.edu
-        """
-    }
+URLS = [
+    "https://isss.gsu.edu/",
+    "https://isss.gsu.edu/directory/",
+    "https://isss.gsu.edu/directory/#atlanta-campus-isss-staff",
+    "https://isss.gsu.edu/directory/#perimeter-campuses-isss-staff",
+    "https://isss.gsu.edu/directory/#isss-student-staff",
+    "https://isss.gsu.edu/about/policies/",
+    "https://isss.gsu.edu/about/policies/#certificate-programs",
+    "https://isss.gsu.edu/about/policies/#change-of-status",
+    "https://isss.gsu.edu/about/policies/#completion-of-study",
+    "https://isss.gsu.edu/about/policies/#concurrent-enrollment",
+    "https://isss.gsu.edu/about/policies/#curricular-practical-training",
+    "https://isss.gsu.edu/about/policies/#extension-of-f-1-program",
+    "https://isss.gsu.edu/about/policies/#extension-of-j-1-program",
+    "https://isss.gsu.edu/about/policies/#f-1-change-of-level",
+    "https://isss.gsu.edu/about/policies/#f-2-enrollment",
+    "https://isss.gsu.edu/about/policies/#i-20-issuance-deadlines-for-new-students",
+    "https://isss.gsu.edu/about/policies/#j-1-academic-training",
+    "https://isss.gsu.edu/about/policies/#optional-practical-training",
+    "https://isss.gsu.edu/about/policies/#optional-practical-training-stem-extension",
+    "https://isss.gsu.edu/about/policies/#post-baccalaureate-study",
+    "https://isss.gsu.edu/about/policies/#recruiters-and-international-recruits",
+    "https://isss.gsu.edu/about/policies/#reduced-course-load-academic-reasons",
+    "https://isss.gsu.edu/about/policies/#reduced-course-load-medical-reasons",
+    "https://isss.gsu.edu/about/policies/#reduced-course-load-pregnancy",
+    "https://isss.gsu.edu/about/policies/#study-abroad",
+    "https://isss.gsu.edu/about/policies/#transfer",
+    "https://isss.gsu.edu/about/international-enrollment-statistics/",
+    "https://www.dropbox.com/scl/fi/8gubqvnph0k6934upciqr/OpenDoors_FactSheet_Georgia_-2025.pdf?rlkey=ue6mhobndsrfwxi27i06mstnk&e=1&st=1xr7mopi&dl=1",
+    "https://isss.gsu.edu/about/international-families/",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/sevis-student-exchange-visitor-information-system/",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/f1-students-request-form-i20/",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/f1-students-request-form-i20/#copy-of-your-passport-identification-page",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/f1-students-request-form-i20/#financial-documentation",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/learn-about-istart",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/j-1-exchange-students",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/fulbright-muskie-and-externally-sponsored-students",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/transfer-to-georgia-state/",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/review-estimated-costs-of-attendance/",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/faq-international-admissions/",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/next-steps-atlanta-campus/",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/next-steps-perimeter-college/",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#video-sevis-immigration-documents-visas-and-us-port-of-entry",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#when-to-arrive-airport-and-baggage-port-of-entry-process-secondary-inspection",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#housing-and-dining-options-campus-shuttle-other-things-to-consider",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#campus-police-safety-tips-emergency-phone-numbers",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#georgia-state-health-clinic-and-services",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#understanding-overall-emotional-psychological-and-lifestyle-well-being",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#video-understanding-what-sexual-misconduct-means-in-the-us",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/apply-for-your-visa/",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/review-international-student-handbook/",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/connect-with-isss/",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/review-housing-options-meal-plans/",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/review-housing-options-meal-plans/#university-housing",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/review-housing-options-meal-plans/#global-living-learning-community",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/review-housing-options-meal-plans/#on-campus-meal-plans",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/review-housing-options-meal-plans/#resources-and-options",
+    "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/plan-your-arrival-date/",
+    "https://isss.gsu.edu/incoming-students/step-3-arrival-and-orientation/",
+    "https://isss.gsu.edu/incoming-students/step-3-arrival-and-orientation/prepare-for-arrival-in-the-u-s/",
+    "https://isss.gsu.edu/incoming-students/step-3-arrival-and-orientation/atl-airport-and-local-transportation/",
+    "https://isss.gsu.edu/short-term-hotel-options/",
+    "https://isss.gsu.edu/international-check-in-and-orientation/",
+    "https://isss.gsu.edu/incoming-students/step-3-arrival-and-orientation/global-grillout/",
+    "https://isss.gsu.edu/current-students/campus-community-involvement/visa-leader-program/",
+    "https://isss.gsu.edu/placement-tests/",
+    "https://isss.gsu.edu/placement-tests/#graduate-students",
+    "https://isss.gsu.edu/placement-tests/#undergraduate-students",
+    "https://isss.gsu.edu/incoming-students/step-3-arrival-and-orientation/student-health-resources/",
 ]
 
-# ─────────────────────────────────────────────
-# INCOMING CONTENT (normalized to same flat structure)
-# ─────────────────────────────────────────────
-incoming_content = [
+SESSION = requests.Session()
+SESSION.headers.update(
     {
-        "url": "https://isss.gsu.edu/incoming-students/step-1-admissions/",
-        "title": "Step 1: Admissions - I-20 Request Process",
-        "content": """
-Step 1: Admissions - I-20 Request
-
-Organization: International Student & Scholar Services (ISSS), Georgia State University (GSU)
-Website: https://isss.gsu.edu
-
-After Academic Admission:
-You will receive an email from ISSS with instructions to log in to iStart to submit your I-20 request.
-iStart portal: https://sunapsisprd.gsu.edu/istart/controllers/start/StartEngine.cfm
-
-Important Notes:
-- An international admissions hold is placed on all newly admitted students
-- Students CANNOT register for classes until the hold is removed by ISSS
-- Submit financial documentation as early as possible
-- ISSS will only review COMPLETE submissions — all required e-forms must be submitted
-- Incomplete submissions will NOT be reviewed
-- I-20 is issued to the student email address once complete
-- Processing time: Allow 10 business days after complete submission
-
-Required Documents for I-20 Request:
-- Passport identification page (ALL applicants)
-- Current F-1/J-1 visa or change of status approval notice, I-20/DS-2019, and I-94
-  (required if currently in the U.S. in F-1 or J-1 status)
-- Current visa and I-94
-  (required if currently in the U.S. on a non-F-1 visa)
-- Passport identification page of dependents (spouse and/or children)
-  (required if dependents will accompany you)
-
-Admissions Portals by Student Type:
-- Undergraduate: https://admissions.gsu.edu/bachelors-degree/apply/international-students/
-- Graduate: https://graduate.gsu.edu/how-to-apply/apply/steps-international-students/
-- Perimeter College: https://perimeter.gsu.edu/admissions/international/
-- J-1 Exchange Students: https://isss.gsu.edu/incoming-students/step-1-admissions/j-1-exchange-students/
-        """
-    },
-    {
-        "url": "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/",
-        "title": "Step 2: Pre-Arrival Checklist",
-        "content": """
-Step 2: Pre-Arrival
-
-System Used: iStart — complete the Pre-Arrival Checklist under 'Georgia State Main Campus'
-iStart portal: https://sunapsisprd.gsu.edu/istart/controllers/start/StartEngine.cfm
-Estimated time to complete: 45 minutes to 1 hour
-
-Start @ State:
-Visit https://start.gsu.edu to complete online orientation modules.
-WARNING: First-year undergraduate F-1 students should NOT register for New Student Orientation at the end of Start @ State.
-
-Academic Advising by Student Type:
-- Undergraduate First-Year: After receiving I-20, attend a virtual academic advising session and register for classes from home country. Must attend International Student Orientation before classes start.
-- Undergraduate Transfer or Transition (PC to Atlanta): After receiving I-20, schedule an appointment with academic advisor. Register independently once registration appointment opens.
-- Graduate Students: After receiving I-20, consult academic department for first-semester course info. Register independently once registration appointment opens.
-
-Documents to Prepare (PDF format only):
-- Passport photo page
-- Visa document
-- I-94 (only available after arrival in the U.S.)
-
-Pre-Arrival Checklist Covers:
-- Confirming enrollment and applying for visa
-- Uploading immigration documents
-- Check-in, orientation, and arrival information
-- Housing options (short-term and long-term)
-- Transportation and airport pickup request
-- Special disability assistance request
-
-Technical Support:
-If you have issues, email isss@gsu.edu with your full name, Panther ID number, and description of the problem.
-
-Warning: Failure to complete pre-arrival e-forms before Check-in and Orientation will cause delays in starting class and settling in Atlanta.
-        """
-    },
-    {
-        "url": "https://isss.gsu.edu/incoming-students/step-3-arrival-and-orientation/",
-        "title": "Step 3: Arrival and Orientation",
-        "content": """
-Step 3: Arrival and Orientation
-
-Required for ALL international students:
-- International Student Check-in
-- International Student Orientation
-
-Orientation Components:
-1. International Student Check-in: Required check-in for all international students upon arrival.
-2. International Student Orientation: Online course covering immigration status, benefits, policies, procedures, life in the U.S., and campus programs.
-3. Arrival Confirmation: Virtual check-in with ISSS to confirm arrival to the U.S. Government and protect immigration status.
-4. Mandatory Academic Advising Session: Required for First-Year International Students only.
-
-Registration: Students receive orientation registration info via iStart. ISSS communicates further details closer to semester start.
-Orientation info: https://isss.gsu.edu/international-check-in-and-orientation/
-        """
-    },
-    {
-        "url": "https://isss.gsu.edu/",
-        "title": "ISSS Contact Information and Office Locations",
-        "content": """
-ISSS Contact Information
-
-Atlanta Campus:
-- Email: isss@gsu.edu
-- Phone: 404-413-2070
-- Location: Student Success Center, Suite 100, 25-27 Auburn Ave NE, Atlanta, GA 30303
-- Mailing Address: ISSS, Georgia State University, 25 Auburn Ave NE, Suite 100, P.O. Box 3987, Atlanta, GA 30302-3987, USA
-  (Use physical address for express mail)
-
-Perimeter College Campus:
-- Email: issspc@gsu.edu
-- Phone: 678-891-3235
-- Location: Building CN 2230 (Student Center), 555 N. Indian Creek Dr., Clarkston, GA 30021
-
-Office Hours: Monday through Friday, 8:30 AM - 5:15 PM EST
-
-Students Served:
-- F-1 International Students (undergraduate and graduate)
-- J-1 Exchange Students
-- Fulbright, Muskie, and Externally Sponsored Students
-- Transfer Students to GSU
-- International Employees and Visiting Scholars (H-1B, O-1, TN, J-1 Scholars)
-- Dependents (J-2, F-2)
-
-Critical Rules:
-- Students CANNOT register for classes until the international admissions hold is removed by ISSS
-- Submit financial documentation as early as possible to allow time for visa application processing
-- ISSS will only review COMPLETE submissions — all required e-forms must be submitted
-- Failure to complete pre-arrival e-forms before Check-in and Orientation will cause delays in starting class
-- I-94 can only be uploaded AFTER arrival in the U.S.
-- First-year undergraduate F-1 students should NOT register for New Student Orientation at the end of Start @ State
-        """
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/123.0.0.0 Safari/537.36"
+        )
     }
-]
+)
 
 
-def save_manual_content(filepath, content):
-    """Save manually entered content"""
-    os.makedirs('data/raw_docs', exist_ok=True)
+def clean_text(text: str) -> str:
+    text = text.replace("\xa0", " ")
+    text = re.sub(r"\r", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()
 
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(content, f, indent=2, ensure_ascii=False)
 
-    total_chars = sum(len(doc.get('content', json.dumps(doc))) for doc in content)
+def extract_title(soup: BeautifulSoup) -> str:
+    h1 = soup.find("h1")
+    if h1:
+        return clean_text(h1.get_text(" ", strip=True))
+    if soup.title:
+        return clean_text(soup.title.get_text(" ", strip=True))
+    return "Untitled"
 
-    print(f"✅ Saved {len(content)} documents to {filepath}")
-    print(f"   Pages: {len(content)}")
-    print(f"   Total characters: {total_chars:,}")
+
+def extract_main_text(soup: BeautifulSoup) -> str:
+    main = soup.find("main") or soup.find("article") or soup.find(class_=re.compile(r"content|entry|page", re.I)) or soup.body
+    if not main:
+        return ""
+    for tag in main.find_all(["script", "style", "noscript", "svg", "img", "iframe", "form"]):
+        tag.decompose()
+    text = main.get_text("\n", strip=True)
+    return clean_text(text)
+
+
+def section_root_for_fragment(soup: BeautifulSoup, fragment: str) -> Tag | None:
+    target = soup.find(id=fragment)
+    if not target:
+        return None
+    if target.name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+        return target
+    heading = target.find(["h1", "h2", "h3", "h4", "h5", "h6"])
+    if isinstance(heading, Tag):
+        return heading
+    parent_heading = target.find_parent(["h1", "h2", "h3", "h4", "h5", "h6"])
+    if isinstance(parent_heading, Tag):
+        return parent_heading
+    return target if isinstance(target, Tag) else None
+
+
+def extract_fragment_text(soup: BeautifulSoup, fragment: str) -> str:
+    root = section_root_for_fragment(soup, fragment)
+    if not root:
+        return extract_main_text(soup)
+
+    parts: list[str] = [clean_text(root.get_text(" ", strip=True))]
+
+    if root.name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+        current_level = int(root.name[1])
+        for sibling in root.next_siblings:
+            if isinstance(sibling, Tag):
+                if sibling.name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+                    next_level = int(sibling.name[1])
+                    if next_level <= current_level:
+                        break
+                text = clean_text(sibling.get_text("\n", strip=True))
+                if text:
+                    parts.append(text)
+    else:
+        text = clean_text(root.get_text("\n", strip=True))
+        if text:
+            parts = [text]
+
+    return clean_text("\n\n".join(parts))
+
+
+def extract_pdf_text_from_bytes(data: bytes) -> str:
+    if PdfReader is None:
+        return "PDF downloaded, but pypdf is not installed so the text was not extracted. Install pypdf to parse PDF content."
+
+    import io
+
+    reader = PdfReader(io.BytesIO(data))
+    pages: list[str] = []
+    for page in reader.pages:
+        page_text = page.extract_text() or ""
+        if page_text.strip():
+            pages.append(page_text)
+    return clean_text("\n\n".join(pages))
+
+
+def scrape_one(url: str) -> dict[str, Any]:
+    base_url, fragment = urldefrag(url.strip())
+    response = SESSION.get(base_url, timeout=30)
+    response.raise_for_status()
+
+    content_type = response.headers.get("Content-Type", "")
+    is_pdf = "pdf" in content_type.lower() or base_url.lower().endswith(".pdf")
+
+    if is_pdf:
+        text = extract_pdf_text_from_bytes(response.content)
+        title = os.path.basename(base_url) or "PDF Document"
+        return {
+            "url": url,
+            "base_url": base_url,
+            "fragment": fragment or None,
+            "title": title,
+            "content_type": "application/pdf",
+            "content": text,
+        }
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    title = extract_title(soup)
+    content = extract_fragment_text(soup, fragment) if fragment else extract_main_text(soup)
+
+    return {
+        "url": url,
+        "base_url": base_url,
+        "fragment": fragment or None,
+        "title": title,
+        "content_type": "text/html",
+        "content": content,
+    }
+
+
+def scrape_all(urls: list[str]) -> list[dict[str, Any]]:
+    documents: list[dict[str, Any]] = []
+    for index, url in enumerate(urls, start=1):
+        try:
+            print(f"[{index}/{len(urls)}] Scraping: {url}")
+            documents.append(scrape_one(url))
+        except Exception as exc:
+            documents.append(
+                {
+                    "url": url,
+                    "base_url": urldefrag(url.strip())[0],
+                    "fragment": urldefrag(url.strip())[1] or None,
+                    "title": "SCRAPE_FAILED",
+                    "content_type": None,
+                    "content": "",
+                    "error": str(exc),
+                }
+            )
+            print(f"    Failed: {exc}")
+    return documents
+
+
+def deduplicate_documents(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    unique: list[dict[str, Any]] = []
+    seen: set[tuple[str, str | None]] = set()
+    for doc in documents:
+        key = (doc.get("url", ""), doc.get("fragment"))
+        if key not in seen:
+            seen.add(key)
+            unique.append(doc)
+    return unique
+
+
+def save_json(filepath: str, documents: list[dict[str, Any]]) -> None:
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(documents, f, indent=2, ensure_ascii=False)
+
+    total_chars = sum(len(doc.get("content", "")) for doc in documents)
+    print(f"\nSaved {len(documents)} documents to {filepath}")
+    print(f"Total content characters: {total_chars:,}")
 
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("CREATING MANUAL ISSS CONTENT")
-    print("=" * 60)
+    print("=" * 70)
+    print("SCRAPING ISSS CONTENT INTO ONE JSON FILE")
+    print("=" * 70)
 
-    save_manual_content('data/raw_docs/isss_content.json', isss_content)
-    save_manual_content('data/raw_docs/incoming_content.json', incoming_content)
+    documents = scrape_all(URLS)
+    documents = deduplicate_documents(documents)
+    save_json("data/raw_docs/isss_content.json", documents)
 
-    print("\n✅ Knowledge base ready!")
+    print("\nDone.")
