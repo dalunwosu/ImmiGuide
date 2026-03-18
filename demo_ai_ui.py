@@ -712,7 +712,7 @@ with col_main:
         if last_msg["role"] == "assistant" and st.session_state.awaiting_feedback:
             st.markdown("<hr style='margin: 1.5rem 0 0.75rem 0;' />", unsafe_allow_html=True)
             st.markdown('<div class="feedback-prompt">Did I answer your question?</div>', unsafe_allow_html=True)
-            fb_col0, fb_col1, fb_col2, fb_col3 = st.columns([6, 1, 1, 6])
+            fb_col0, fb_col1, fb_col_gap, fb_col2, fb_col3 = st.columns([5, 1.2, 0.6, 1.2, 5])
             with fb_col1:
                 if st.button("Yes", key="fb_yes", type="primary"):
                     st.session_state.messages.append({
@@ -780,6 +780,21 @@ with col_main:
             return True
         return False
 
+    def _looks_like_thanks(text: str) -> bool:
+        t = text.strip().lower()
+        if not t:
+            return False
+        return any(
+            phrase in t
+            for phrase in [
+                "thank you",
+                "thanks",
+                "thanks!",
+                "thank u",
+                "appreciate it",
+            ]
+        )
+
     # ---- CHAT INPUT ----
     if not st.session_state.session_expired:
         if prompt := st.chat_input("Ask a question...", key="chat_input"):
@@ -788,6 +803,7 @@ with col_main:
 
             # Special handling for greetings so Immi does not keep re-introducing itself.
             is_greeting = _looks_like_greeting(prompt)
+            is_thanks = _looks_like_thanks(prompt)
 
             st.session_state.messages.append(
                 {
@@ -796,6 +812,23 @@ with col_main:
                     "timestamp": time.time(),
                 }
             )
+
+            # Short, polite acknowledgement for pure "thanks" messages without triggering feedback.
+            if is_thanks and not is_greeting:
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": (
+                            "You’re welcome. If you have another ISSS-related question, "
+                            "you can type it below."
+                        ),
+                        "sources": [],
+                        "timestamp": time.time(),
+                    }
+                )
+                st.session_state.awaiting_feedback = False
+                st.session_state.show_feedback_form = False
+                st.rerun()
 
             if is_greeting and st.session_state.greeting_shown:
                 # Short, non-repetitive acknowledgement without another long introduction.

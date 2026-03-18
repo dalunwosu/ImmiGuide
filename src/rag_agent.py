@@ -265,10 +265,6 @@ Content:
             )
             return {"answer": greeting, "sources": [], "retrieved_docs": []}
 
-        # Refuse unrelated questions early.
-        if not self._is_isss_related(question):
-            return {"answer": self._out_of_scope_message(), "sources": [], "retrieved_docs": []}
-
         print(f"Question: {question}\n")
         print("🔍 Searching knowledge base...")
 
@@ -276,6 +272,15 @@ Content:
         docs = self._dedupe_documents(docs)
 
         if not docs:
+            # If we didn't find relevant ISSS documents and the question also looks unrelated,
+            # treat it as out-of-scope (e.g., random food/movie questions).
+            if not self._is_isss_related(question):
+                return {
+                    "answer": self._out_of_scope_message(),
+                    "sources": [],
+                    "retrieved_docs": [],
+                }
+            # Otherwise, it's ISSS-related but missing from the KB.
             return {
                 "answer": self._kb_missing_message(),
                 "sources": [],
