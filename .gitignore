@@ -32,3 +32,4 @@ data/
 
 # Chroma / vector database
 chroma/
+old/
