@@ -28,7 +28,7 @@ dist/
 Thumbs.db
 
 # Large generated data
-data/
+data/visa_kb/
 
 # Chroma / vector database
 chroma/

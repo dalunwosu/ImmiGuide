@@ -215,6 +215,31 @@ class KnowledgeBaseBuilder:
         return vectorstore.max_marginal_relevance_search(expanded_query, k=k, fetch_k=fetch_k)
 
 
+def ensure_kb_exists(
+    json_file: str = "data/raw_docs/isss_content.json",
+    persist_directory: str = "data/visa_kb",
+) -> None:
+    """
+    Build the vector knowledge base only if it does not already exist.
+
+    This is intended for deployment environments (e.g., Streamlit Cloud) where
+    we want to avoid committing a large Chroma directory but still guarantee
+    that the KB is available at runtime.
+    """
+    # If the directory exists and is non-empty, assume it's already built.
+    if os.path.isdir(persist_directory) and os.listdir(persist_directory):
+        return
+
+    print("=" * 60)
+    print("No existing visa_kb found. Building knowledge base from scraped JSON...")
+    print("=" * 60)
+
+    builder = KnowledgeBaseBuilder()
+    builder.build_from_scraped_data(json_file, persist_directory=persist_directory)
+
+    print("Knowledge base build complete.")
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("BUILDING KNOWLEDGE BASE")

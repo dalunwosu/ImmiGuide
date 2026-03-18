@@ -4,6 +4,7 @@ import html
 import re
 from datetime import datetime
 from src.rag_agent import RAGVisaAssistant
+from src.build_knowledge_base import ensure_kb_exists
 
 # GSU Brand Colors
 GSU_BLUE = "#0039A6"
@@ -476,6 +477,10 @@ if 'greeting_shown' not in st.session_state:
 
 if 'assistant' not in st.session_state:
     with st.spinner("Loading Immi..."):
+        ensure_kb_exists(
+            json_file="data/raw_docs/isss_content.json",
+            persist_directory="data/visa_kb",
+        )
         st.session_state.assistant = RAGVisaAssistant()
 
 # ---- TIMEOUT LOGIC ----
