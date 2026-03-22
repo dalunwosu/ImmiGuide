@@ -12,6 +12,7 @@ try:
 except Exception:
     PdfReader = None
 
+# Page list for ISSS scraping. Re-verify after edits: `python scripts/check_urls.py`
 URLS = [
     "https://isss.gsu.edu/",
     "https://isss.gsu.edu/directory/",
@@ -47,9 +48,9 @@ URLS = [
     "https://isss.gsu.edu/incoming-students/step-1-admissions/f1-students-request-form-i20/",
     "https://isss.gsu.edu/incoming-students/step-1-admissions/f1-students-request-form-i20/#copy-of-your-passport-identification-page",
     "https://isss.gsu.edu/incoming-students/step-1-admissions/f1-students-request-form-i20/#financial-documentation",
-    "https://isss.gsu.edu/incoming-students/step-1-admissions/learn-about-istart",
-    "https://isss.gsu.edu/incoming-students/step-1-admissions/j-1-exchange-students",
-    "https://isss.gsu.edu/incoming-students/step-1-admissions/fulbright-muskie-and-externally-sponsored-students",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/learn-about-istart/",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/j-1-exchange-students/",
+    "https://isss.gsu.edu/incoming-students/step-1-admissions/fulbright-muskie-and-externally-sponsored-students/",
     "https://isss.gsu.edu/incoming-students/step-1-admissions/transfer-to-georgia-state/",
     "https://isss.gsu.edu/incoming-students/step-1-admissions/review-estimated-costs-of-attendance/",
     "https://isss.gsu.edu/incoming-students/step-1-admissions/faq-international-admissions/",
@@ -83,6 +84,7 @@ URLS = [
     "https://isss.gsu.edu/placement-tests/#graduate-students",
     "https://isss.gsu.edu/placement-tests/#undergraduate-students",
     "https://isss.gsu.edu/incoming-students/step-3-arrival-and-orientation/student-health-resources/",
+
 ]
 
 SESSION = requests.Session()

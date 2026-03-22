@@ -1,3 +1,9 @@
+"""
+Legacy ISSS scraper (simpler HTML extraction).
+
+For updating the knowledge base, prefer `manual_isss_content.py` at the repo root:
+same output path `data/raw_docs/isss_content.json`, richer parsing (fragments, PDFs).
+"""
 import os
 import requests
 from bs4 import BeautifulSoup
@@ -78,10 +84,6 @@ if __name__ == "__main__":
     urls = [
         "https://isss.gsu.edu/",
         "https://isss.gsu.edu/current-students/",
-        "https://isss.gsu.edu/employment/",
-        "https://isss.gsu.edu/employment/cpt/",
-        "https://isss.gsu.edu/employment/opt/",
-        "https://isss.gsu.edu/travel/",
         "https://isss.gsu.edu/incoming-students/step-1-admissions/sevis-student-exchange-visitor-information-system/",
         "https://isss.gsu.edu/incoming-students/step-1-admissions/f1-students-request-form-i20/",
         "https://isss.gsu.edu/incoming-students/step-1-admissions/f1-students-request-form-i20/#copy-of-your-passport-identification-page",
