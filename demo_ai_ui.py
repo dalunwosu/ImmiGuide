@@ -524,6 +524,15 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
+    st.markdown(
+        f"""
+        <p style="font-size:0.78rem;color:{GSU_GRAY_500};line-height:1.45;margin:0.75rem 0 1rem 0;padding:0 0.15rem;">
+            You can ask in your own language—Immi answers in that language using verified ISSS website information.
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.markdown('<div class="sidebar-section-label">Suggested Questions</div>', unsafe_allow_html=True)
 
     example_questions = [
@@ -589,6 +598,7 @@ with col_main:
                 <p class="welcome-title">Welcome to Immi</p>
                 <p class="welcome-body">
                     Ask any question about your F-1 visa status, CPT, OPT, travel, or enrollment requirements.
+                    You can write in your preferred language—Immi will reply in that language using official ISSS sources.
                     Every answer is sourced from official ISSS and USCIS documentation.
                 </p>
                 <div class="disclaimer-bar">

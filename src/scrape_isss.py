@@ -1,136 +1,171 @@
 """
-Legacy ISSS scraper (simpler HTML extraction).
+Legacy ISSS scraper (auto-discovers internal links).
 
-For updating the knowledge base, prefer `manual_isss_content.py` at the repo root:
-same output path `data/raw_docs/isss_content.json`, richer parsing (fragments, PDFs).
+Starts from https://isss.gsu.edu/ and crawls all internal sublinks,
+then scrapes their text content.
 """
+
 import os
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
+from collections import deque
 import time
 import json
 
+
 class ISSSScraper:
     def __init__(self):
-        self.base_url = "https://isss.gsu.edu"
+        self.base_url = "https://isss.gsu.edu/"
+        self.allowed_domain = "isss.gsu.edu"
         self.visited = set()
         self.documents = []
-    
+
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (compatible; ISSS-Scraper/1.0)"
+        })
+
+    def is_internal_link(self, url):
+        parsed = urlparse(url)
+        return parsed.netloc == self.allowed_domain
+
+    def normalize_url(self, base, href):
+        full_url = urljoin(base, href)
+        parsed = urlparse(full_url)
+
+        # only http/https
+        if parsed.scheme not in ("http", "https"):
+            return None
+
+        # only keep internal links from isss.gsu.edu
+        if not self.is_internal_link(full_url):
+            return None
+
+        # remove fragments like #section
+        clean_url = parsed._replace(fragment="").geturl()
+
+        # skip obvious non-html/static files
+        lower = clean_url.lower()
+        blocked_exts = (
+            ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
+            ".mp4", ".mp3", ".zip", ".doc", ".docx",
+            ".xls", ".xlsx", ".ppt", ".pptx"
+        )
+        if lower.endswith(blocked_exts):
+            return None
+
+        return clean_url
+
+    def discover_links(self, start_url=None, max_pages=300):
+        if start_url is None:
+            start_url = self.base_url
+
+        queue = deque([start_url])
+        discovered = []
+        seen = set()
+
+        while queue and len(discovered) < max_pages:
+            current_url = queue.popleft()
+
+            if current_url in seen:
+                continue
+            seen.add(current_url)
+
+            try:
+                print(f"Discovering: {current_url}")
+                response = self.session.get(current_url, timeout=15)
+                response.raise_for_status()
+
+                content_type = response.headers.get("Content-Type", "").lower()
+                if "html" not in content_type:
+                    continue
+
+                discovered.append(current_url)
+
+                soup = BeautifulSoup(response.text, "html.parser")
+                for a in soup.find_all("a", href=True):
+                    normalized = self.normalize_url(current_url, a["href"])
+                    if normalized and normalized not in seen and normalized not in queue:
+                        queue.append(normalized)
+
+                time.sleep(0.5)
+
+            except Exception as e:
+                print(f"  ❌ Discovery error on {current_url}: {e}")
+
+        return discovered
+
     def scrape_page(self, url):
-        #Scrape a single page
         try:
-            #Don't scrape the same page twice
             if url in self.visited:
                 return
-            
+
             self.visited.add(url)
             print(f"Scraping: {url}")
-            
-            #Get page content
-            response = requests.get(url, timeout=10)
+
+            response = self.session.get(url, timeout=15)
             response.raise_for_status()
-            
-            # Parse HTML
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Extract main content (adjust selectors for ISSS site)
-            # You might need to inspect the site to find the right selectors
-            content_div = soup.find('div', {'class': 'content'}) or soup.find('main')
-            
+
+            content_type = response.headers.get("Content-Type", "").lower()
+            if "html" not in content_type:
+                print("  ⚠️ Skipped non-HTML page")
+                return
+
+            soup = BeautifulSoup(response.content, "html.parser")
+
+            # remove junk tags
+            for tag in soup(["script", "style", "noscript"]):
+                tag.decompose()
+
+            # try to get main content first
+            content_div = (
+                soup.find("main")
+                or soup.find("div", {"class": "content"})
+                or soup.find("article")
+                or soup.body
+            )
+
             if content_div:
-                # Get text content
-                text = content_div.get_text(separator='\\n', strip=True)
-                
-                # Save document
+                text = content_div.get_text(separator="\n", strip=True)
+
                 self.documents.append({
-                    'url': url,
-                    'title': soup.find('title').text if soup.find('title') else 'Untitled',
-                    'content': text
+                    "url": url,
+                    "title": soup.title.text.strip() if soup.title else "Untitled",
+                    "content": text
                 })
-                
+
                 print(f"  ✅ Saved {len(text)} characters")
-            
-            # Be polite - don't overwhelm the server
-            time.sleep(1)
-            
+
+            time.sleep(0.5)
+
         except Exception as e:
-            print(f"  ❌ Error: {e}")
-    
+            print(f"  ❌ Scrape error on {url}: {e}")
+
     def scrape_multiple_pages(self, urls):
-        #Scrape multiple URLs
         for url in urls:
             self.scrape_page(url)
-        
         return self.documents
-    
-    def save_to_file(self, filename):
-        #Save scraped content to file
-        import json
-        
-        os.makedirs('data/raw_docs', exist_ok=True)
-        filepath = f'data/raw_docs/{filename}'
-        
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(self.documents, f, indent=2, ensure_ascii=False)
-        
-        print(f"\\n✅ Saved {len(self.documents)} documents to {filepath}")
 
-# Use it
+    def save_to_file(self, filename):
+        os.makedirs("data/raw_docs", exist_ok=True)
+        filepath = f"data/raw_docs/{filename}"
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(self.documents, f, indent=2, ensure_ascii=False)
+
+        print(f"\n✅ Saved {len(self.documents)} documents to {filepath}")
+
+
 if __name__ == "__main__":
     scraper = ISSSScraper()
-    
-    # Important ISSS pages (add more as you find them)
-    urls = [
-        "https://isss.gsu.edu/",
-        "https://isss.gsu.edu/current-students/",
-        "https://isss.gsu.edu/incoming-students/step-1-admissions/sevis-student-exchange-visitor-information-system/",
-        "https://isss.gsu.edu/incoming-students/step-1-admissions/f1-students-request-form-i20/",
-        "https://isss.gsu.edu/incoming-students/step-1-admissions/f1-students-request-form-i20/#copy-of-your-passport-identification-page",
-        "https://isss.gsu.edu/incoming-students/step-1-admissions/f1-students-request-form-i20/#financial-documentation",
-        "https://isss.gsu.edu/incoming-students/step-1-admissions/learn-about-istart/",
-        "https://isss.gsu.edu/incoming-students/step-1-admissions/j-1-exchange-students/",
-        "https://isss.gsu.edu/incoming-students/step-1-admissions/fulbright-muskie-and-externally-sponsored-students/",
-        "https://isss.gsu.edu/incoming-students/step-1-admissions/transfer-to-georgia-state/",
-        "https://isss.gsu.edu/incoming-students/step-1-admissions/review-estimated-costs-of-attendance/",
-        "https://isss.gsu.edu/incoming-students/step-1-admissions/faq-international-admissions/",
-        "https://isss.gsu.edu/incoming-students/step-1-admissions/next-steps-atlanta-campus/",
-        "https://isss.gsu.edu/incoming-students/step-1-admissions/next-steps-perimeter-college/",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#video-sevis-immigration-documents-visas-and-us-port-of-entry",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#when-to-arrive-airport-and-baggage-port-of-entry-process-secondary-inspection",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#housing-and-dining-options-campus-shuttle-other-things-to-consider",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#campus-police-safety-tips-emergency-phone-numbers",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#georgia-state-health-clinic-and-services",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#understanding-overall-emotional-psychological-and-lifestyle-well-being",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/helpful-information/#video-understanding-what-sexual-misconduct-means-in-the-us",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/apply-for-your-visa/",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/review-international-student-handbook/",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/connect-with-isss/",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/review-housing-options-meal-plans/",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/review-housing-options-meal-plans/#university-housing",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/review-housing-options-meal-plans/#global-living-learning-community",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/review-housing-options-meal-plans/#on-campus-meal-plans",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/review-housing-options-meal-plans/#resources-and-options",
-        "https://isss.gsu.edu/incoming-students/step-2-pre-arrival/plan-your-arrival-date/",
-        "https://isss.gsu.edu/incoming-students/step-3-arrival-and-orientation/",
-        "https://isss.gsu.edu/incoming-students/step-3-arrival-and-orientation/prepare-for-arrival-in-the-u-s/",
-        "https://isss.gsu.edu/incoming-students/step-3-arrival-and-orientation/atl-airport-and-local-transportation/",
-        "https://isss.gsu.edu/short-term-hotel-options/",
-        "https://isss.gsu.edu/international-check-in-and-orientation/",
-        "https://isss.gsu.edu/incoming-students/step-3-arrival-and-orientation/global-grillout/",
-        "https://isss.gsu.edu/current-students/campus-community-involvement/visa-leader-program/",
-        "https://isss.gsu.edu/placement-tests/",
-        "https://isss.gsu.edu/placement-tests/#graduate-students",
-        "https://isss.gsu.edu/placement-tests/#undergraduate-students",
-        "https://isss.gsu.edu/incoming-students/step-3-arrival-and-orientation/student-health-resources/",
-        "https://www.dropbox.com/scl/fi/2zjz9502ixj61k0s30xle/International-Student-Handbook-072021.pdf?rlkey=d8z5szrwh4xp0ukzgu0egvquu&e=1&st=9ttjhyie&dl=0"
 
-    ]
-    
+    urls = scraper.discover_links(max_pages=300)
+    print(f"\nFound {len(urls)} internal ISSS links")
+
     documents = scraper.scrape_multiple_pages(urls)
-    scraper.save_to_file('isss_content.json')
-    
-    print(f"\\n📊 Stats:")
+    scraper.save_to_file("isss_content.json")
+
+    print(f"\n📊 Stats:")
     print(f"  Pages scraped: {len(documents)}")
     print(f"  Total characters: {sum(len(doc['content']) for doc in documents)}")

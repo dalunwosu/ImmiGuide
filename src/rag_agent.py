@@ -9,6 +9,8 @@ from google.genai import errors as genai_errors
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
+from src.multilingual import analyze_question_for_rag
+
 load_dotenv()
 
 
@@ -28,6 +30,8 @@ class RAGVisaAssistant:
 
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
+        # Same model by default; set MULTILINGUAL_MODEL to override the small JSON analysis call
+        self.multilingual_model = os.getenv("MULTILINGUAL_MODEL", model_name)
 
         print("Loading knowledge base...")
         self.embeddings = HuggingFaceEmbeddings(
@@ -74,8 +78,11 @@ Explanation:
 - <short bullet or short paragraph>
 - <second bullet if helpful>
 
-If the context is not enough, say exactly:
+If the context is not enough, say exactly (in the student's language as instructed separately):
 "I don't have enough verified information in the ISSS knowledge base to answer that confidently. Please visit https://isss.gsu.edu/ or contact ISSS at isss@gsu.edu."
+
+Multilingual:
+- When asked, write the entire answer in the student's language. The context is in English; translate accurately and do not add information that is not in the context.
 """.strip()
 
     def _is_greeting(self, text: str) -> bool:
@@ -256,25 +263,55 @@ Content:
         return "\n\n---\n\n".join(context_blocks), list(dict.fromkeys(sources))
 
     def answer_question(self, question: str, k: int = 6) -> Dict[str, Any]:
-        # Handle greetings / conversational openers without hitting retrieval.
-        if self._is_greeting(question):
-            greeting = (
-                "Hello! I’m ImmiGuide, your Georgia State University ISSS assistant. "
-                "Ask me a question about ISSS topics (F-1/J-1 status, I-20/DS-2019, CPT/OPT, travel, check-in/orientation), "
-                "and I’ll answer using verified information from the ISSS website."
-            )
-            return {"answer": greeting, "sources": [], "retrieved_docs": []}
+        lang_info = analyze_question_for_rag(
+            self.client, self.multilingual_model, question
+        )
+        retrieval_q = lang_info["retrieval_query_en"] or question.strip()
+        answer_lang_name = lang_info.get("answer_language_name") or "English"
+        answer_lang_code = lang_info.get("answer_language") or "en"
+
+        # Localized greeting / thanks / goodbye (one structured API call)
+        if lang_info.get("prefab_reply"):
+            return {
+                "answer": lang_info["prefab_reply"],
+                "sources": [],
+                "retrieved_docs": [],
+            }
+
+        # API classified as small talk but did not return prefab — avoid junk retrieval
+        rq_low = retrieval_q.strip().lower()
+        if rq_low in {"greeting", "thanks", "goodbye"}:
+            return {
+                "answer": (
+                    "Hello! I’m ImmiGuide, your Georgia State University ISSS assistant. "
+                    "Ask me a question about ISSS topics (F-1/J-1 status, I-20/DS-2019, CPT/OPT, travel, check-in/orientation), "
+                    "and I’ll answer using verified information from the ISSS website."
+                ),
+                "sources": [],
+                "retrieved_docs": [],
+            }
+
+        # If multilingual is disabled, keep fast English-only greeting detection
+        if os.getenv("DISABLE_MULTILINGUAL", "").strip().lower() in ("1", "true", "yes"):
+            if self._is_greeting(question):
+                greeting = (
+                    "Hello! I’m ImmiGuide, your Georgia State University ISSS assistant. "
+                    "Ask me a question about ISSS topics (F-1/J-1 status, I-20/DS-2019, CPT/OPT, travel, check-in/orientation), "
+                    "and I’ll answer using verified information from the ISSS website."
+                )
+                return {"answer": greeting, "sources": [], "retrieved_docs": []}
 
         print(f"Question: {question}\n")
-        print("🔍 Searching knowledge base...")
+        print(f"🔍 Searching knowledge base (English query: {retrieval_q[:120]}...)")
 
-        docs = self._retrieve_documents(question, k=k, fetch_k=max(15, k * 4))
+        docs = self._retrieve_documents(retrieval_q, k=k, fetch_k=max(15, k * 4))
         docs = self._dedupe_documents(docs)
 
         if not docs:
             # If we didn't find relevant ISSS documents and the question also looks unrelated,
             # treat it as out-of-scope (e.g., random food/movie questions).
-            if not self._is_isss_related(question):
+            related = self._is_isss_related(question) or self._is_isss_related(retrieval_q)
+            if not related:
                 return {
                     "answer": self._out_of_scope_message(),
                     "sources": [],
@@ -300,8 +337,16 @@ Use only the context below from official ISSS materials.
 Context:
 {context}
 
-Student question:
+Student question (original language, verbatim):
 {question}
+
+English search query used to find context (for your understanding only):
+{retrieval_q}
+
+Language:
+- Write your ENTIRE response in: {answer_lang_name} (BCP-47: {answer_lang_code}).
+- The context above is in English; translate faithfully into that language.
+- Do not add facts that are not supported by the context.
 
 Instructions:
 - Answer only from the context.
@@ -309,7 +354,7 @@ Instructions:
 - If the answer is conditional, say exactly what it depends on.
 - Do not guess.
 - Do not mention retrieval, embeddings, vector databases, or internal system details.
-- If the context is not enough, use the fallback sentence exactly.
+- If the context is not enough, use the fallback sentence exactly (translated into {answer_lang_name}).
 """.strip()
 
         print("🤖 Generating answer...\n")
