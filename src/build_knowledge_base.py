@@ -17,8 +17,8 @@ except ImportError:
 class KnowledgeBaseBuilder:
     def __init__(
         self,
-        chunk_size: int = 450,
-        chunk_overlap: int = 80,
+        chunk_size: int = 600,
+        chunk_overlap: int = 120,
         model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
     ):
         print("Loading embedding model...")
@@ -40,6 +40,21 @@ class KnowledgeBaseBuilder:
         text = text.replace("\xa0", " ")
         text = re.sub(r"\n{3,}", "\n\n", text)
         text = re.sub(r"[ \t]{2,}", " ", text)
+        bad_lines = [
+            "Main navigation",
+            "Skip to content",
+            "Georgia State Home",
+        ]
+
+        lines = text.split("\n")
+        cleaned = []
+        for i, line in enumerate(lines):
+            if any(bad.lower() in line.lower() for bad in bad_lines):
+                continue
+            if i == 0 or line != lines[i - 1]:
+                cleaned.append(line)
+
+        text = "\n".join(cleaned)
         return text.strip()
 
     def detect_tags(self, url: str, title: str, content: str) -> List[str]:
@@ -61,10 +76,29 @@ class KnowledgeBaseBuilder:
             "current_students": ["current-students"],
             "j1": ["j-1", "exchange visitor"],
             "f1": ["f-1", "student visa"],
+            "ssn": ["ssn", "social security number"],
         }
 
         tags = [tag for tag, needles in rules.items() if any(n in haystack for n in needles)]
         return sorted(set(tags)) or ["general"]
+    
+    def detect_category(self, url: str, title: str) -> str:
+        text = f"{url} {title}".lower()
+
+        if "employment" in text:
+            return "employment"
+        elif "visa" in text or "i-20" in text:
+            return "visa"
+        elif "arrival" in text or "orientation" in text:
+            return "arrival"
+        elif "housing" in text:
+            return "housing"
+        elif "health" in text:
+            return "health"
+        elif "policy" in text:
+            return "policy"
+        else:
+            return "general"
 
     def build_search_hints(self, url: str, title: str, content: str, tags: List[str]) -> str:
         hints: List[str] = []
@@ -106,9 +140,11 @@ class KnowledgeBaseBuilder:
         url = item.get("url", "")
         content = self.normalize_text(item.get("content", ""))
         tags = self.detect_tags(url, title, content)
+        category = self.detect_category(url, title)
         hints = self.build_search_hints(url, title, content, tags)
 
         enriched_parts = [
+            f"CATEGORY: {category}",
             f"TITLE: {title}",
             f"URL: {url}",
             f"TAGS: {', '.join(tags)}",
@@ -131,6 +167,7 @@ class KnowledgeBaseBuilder:
             title = self.normalize_text(item.get("title", "Untitled"))
             raw_content = self.normalize_text(item.get("content", ""))
             tags = self.detect_tags(url, title, raw_content)
+            category = self.detect_category(url, title)
             enriched_content = self.enrich_page_content(item)
 
             doc = Document(
@@ -139,6 +176,7 @@ class KnowledgeBaseBuilder:
                     "source": url,
                     "title": title,
                     "tags": tags,
+                    "category": category
                 },
             )
             documents.append(doc)
@@ -149,6 +187,14 @@ class KnowledgeBaseBuilder:
     def split_documents(self, documents: List[Document]) -> List[Document]:
         print("Splitting documents into chunks...")
         chunks = self.text_splitter.split_documents(documents)
+        for chunk in chunks:
+            text = chunk.page_content.lower()
+
+            if "curricular practical training" in text:
+                chunk.metadata["boost"] = "cpt"
+
+            elif "optional practical training" in text:
+                chunk.metadata["boost"] = "opt"
 
         for i, chunk in enumerate(chunks):
             chunk.metadata["chunk_id"] = i
@@ -210,9 +256,40 @@ class KnowledgeBaseBuilder:
         expanded = " | ".join([query] + additions)
         return expanded
 
-    def retrieve(self, vectorstore: Chroma, query: str, k: int = 5, fetch_k: int = 20) -> List[Document]:
+    def retrieve(self, vectorstore: Chroma, query: str, k: int = 6, fetch_k: int = 25) -> List[Document]:
         expanded_query = self.expand_query(query)
-        return vectorstore.max_marginal_relevance_search(expanded_query, k=k, fetch_k=fetch_k)
+
+        q = query.lower()
+        category_filter = None
+
+        if "opt" in q or "cpt" in q or "work" in q:
+            category_filter = "employment"
+        elif "visa" in q or "i-20" in q:
+            category_filter = "visa"
+        elif "arrival" in q:
+            category_filter = "arrival"
+
+        docs = vectorstore.max_marginal_relevance_search(
+            expanded_query,
+            k=k,
+            fetch_k=fetch_k
+        )
+
+        if category_filter:
+            docs = [
+                d for d in docs
+                if category_filter in d.page_content.lower()
+            ]
+
+        return docs[:k]
+    
+    def retrieve_with_category(self, vectorstore, query, category=None):
+        docs = self.retrieve(vectorstore, query)
+
+        if category:
+            docs = [d for d in docs if d.metadata.get("category") == category]
+
+        return docs[:6]
 
 
 def ensure_kb_exists(

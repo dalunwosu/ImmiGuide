@@ -1,7 +1,7 @@
 """
 Legacy ISSS scraper (auto-discovers internal links).
 
-Starts from https://isss.gsu.edu/ and crawls all internal sublinks,
+Starts from https://isss.gsu.edu and crawls all internal sublinks,
 then scrapes their text content.
 """
 
@@ -16,7 +16,7 @@ import json
 
 class ISSSScraper:
     def __init__(self):
-        self.base_url = "https://isss.gsu.edu/"
+        self.base_url = "https://isss.gsu.edu"
         self.allowed_domain = "isss.gsu.edu"
         self.visited = set()
         self.documents = []
@@ -55,8 +55,59 @@ class ISSSScraper:
         if lower.endswith(blocked_exts):
             return None
 
-        return clean_url
+        bad_paths = [
+            "/search",
+            "/directory",
+            "/employment/",
+            "/travel/",
+        ]
 
+        for p in bad_paths:
+            if p in clean_url:
+                return None
+        return clean_url.rstrip("/")
+    
+    def is_valid_url(self, url):
+        bad_paths = [
+            "/search",
+            "/directory",
+        ]
+
+        for p in bad_paths:
+            if p in url:
+                return False
+
+        fake_paths = [
+            "/employment/",
+            "/travel/",
+            "/employment/cpt/",
+            "/employment/opt/",
+        ]
+
+        for p in fake_paths:
+            if p in url:
+                return False
+
+        return True
+    def is_good_content(self, text):
+        if not text or len(text) < 300:
+            return False
+
+        bad_signals = [
+            "SORRY, WE'VE CHANGED THE WEBSITE",
+            "Main navigation",
+            "Skip to content",
+            "Search the Site",
+        ]
+
+        text_lower = text.lower()
+
+        for b in bad_signals:
+            if b.lower() in text_lower:
+                return False
+
+        return True
+    
     def discover_links(self, start_url=None, max_pages=300):
         if start_url is None:
             start_url = self.base_url
@@ -129,6 +180,13 @@ class ISSSScraper:
             if content_div:
                 text = content_div.get_text(separator="\n", strip=True)
 
+                if not self.is_valid_url(url):
+                    print("  ❌ Skipped fake/bad URL")
+                    return
+
+                if not self.is_good_content(text):
+                    print("  ❌ Skipped low-quality page")
+                    return
                 self.documents.append({
                     "url": url,
                     "title": soup.title.text.strip() if soup.title else "Untitled",

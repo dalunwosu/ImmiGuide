@@ -1,5 +1,8 @@
-from langchain.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma
+from langchain_core.documents import Document
+from typing import List
 from langchain.embeddings import HuggingFaceEmbeddings
+from build_knowledge_base import KnowledgeBaseBuilder
 
 # Load existing vector database
 print("Loading knowledge base...")

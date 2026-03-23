@@ -65,6 +65,10 @@ Your job:
 - Be careful with immigration questions: if a rule depends on authorization, visa type, approval, or timing, say that clearly.
 - Never invent steps, deadlines, eligibility rules, or requirements.
 - If the context is incomplete or missing, say so clearly and tell the student to contact ISSS or visit the ISSS website.
+- DO NOT generate or invent any URLs.
+- Only use the provided context.
+- Do not include links unless explicitly provided.
+- If no URL is available, do not include any link.
 
 Scope rules:
 - If the user asks something unrelated to ISSS / international student services (e.g., food, movies, general trivia), say you can only help with GSU ISSS-related questions.
@@ -78,11 +82,16 @@ Explanation:
 - <short bullet or short paragraph>
 - <second bullet if helpful>
 
-If the context is not enough, say exactly (in the student's language as instructed separately):
-"I don't have enough verified information in the ISSS knowledge base to answer that confidently. Please visit https://isss.gsu.edu/ or contact ISSS at isss@gsu.edu."
+If the context is not enough:
+- ONLY return the fallback message
+- DO NOT combine it with any other answer
+- The fallback must be fully in the user's language
+- ALWAYS include the isss@gsu.edu email
 
 Multilingual:
 - When asked, write the entire answer in the student's language. The context is in English; translate accurately and do not add information that is not in the context.
+- Do NOT include or generate any URLs or references in your answer.
+- References will be provided separately.
 """.strip()
 
     def _is_greeting(self, text: str) -> bool:
@@ -249,7 +258,12 @@ Multilingual:
             title = doc.metadata.get("title", "Untitled")
             tags = doc.metadata.get("tags", "")
 
-            sources.append(source_url)
+            if (
+                isinstance(source_url, str)
+                and source_url.startswith(self.allowed_source_prefixes)
+                and source_url not in sources
+            ):
+                sources.append(source_url)
 
             block = f"""Source {i}
 Title: {title}
@@ -399,7 +413,7 @@ Instructions:
             raise
 
         answer_text = getattr(response, "text", "") or ""
-        answer_text = answer_text.strip()
+        answer_text = re.sub(r'isss\.gsu\.edu\S*', '', answer_text)
 
         # Remove any "Sources:" section if the model still includes it.
         answer_text = re.split(r"(?im)^\s*sources\s*:\s*$", answer_text, maxsplit=1)[0].rstrip()
